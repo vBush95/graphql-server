@@ -1,9 +1,12 @@
 //Cors
-const allowedDomains = [
-  "http://localhost:3000",
-  "ws://localhost:4000",
-  "https://studio.apollographql.com",
-];
+// const allowedDomains = [
+//   "http://localhost:3000",
+//   "ws://localhost:4000",
+//   "https://studio.apollographql.com",
+//   "https://client-meine-tolle-seite-1.herokuapp.com/",
+// ];
+
+const allowedDomains = ["https://client-meine-tolle-seite-1.herokuapp.com/"];
 const verifyOrigin = (origin, callback) => {
   if (!origin) return callback(null, true);
 

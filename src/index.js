@@ -130,21 +130,24 @@ async function startApolloServer(typeDefs, resolvers) {
   });
 
   try {
-    mongoose.connect(process.env.MONGODB, {
+    mongoose.connect(process.env.MONGODB_PRODUCTION, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
     });
 
     await new Promise((resolve) => {
       httpServer.listen({
-        port: process.env.PORT || 4000,
+        //port: process.env.PORT || 4000,
+        port: process.env.PORT || 80,
         resolve,
       }),
         console.log(
-          `🚀 Server ready at http://localhost:4000${server.graphqlPath}`
+          `🚀 Server ready`
+          // `🚀 Server ready at http://localhost:4000${server.graphqlPath}`
         );
       console.log(
-        `🚀 Subscriptions ready at ws://localhost:${4000}${server.graphqlPath}`
+        `🚀 Subscriptions ready`
+        //`🚀 Subscriptions ready at ws://localhost:${4000}${server.graphqlPath}`
       );
     });
   } catch (err) {
