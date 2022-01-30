@@ -18,4 +18,4 @@ const pubsub = new RedisPubSub({
   subscriber: new Redis(options),
 });
 
-module.exports = { pubsub };
+module.exports = pubsub;

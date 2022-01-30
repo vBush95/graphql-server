@@ -1,10 +1,15 @@
 const User = require("./models/User");
+const Message = require("./models/Message");
+const UsersOnline = require("./models/UsersOnline");
 const RegisterKey = require("./models/RegisterKey");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const { UserInputError } = require("apollo-server-express");
 const { generateAccessToken, generateRefreshToken } = require("./utils/token");
 const checkAuth = require("./utils/checkAuth");
+const pubsub = require("./utils/pubsub");
+const guid = require("./utils/generateRandomId");
+const sendRefreshToken = require("./utils/sendRefreshToken");
 
 const {
   validateRegisterInput,
@@ -14,8 +19,6 @@ const {
   validateRegisterInputPassword,
   validateLoginInput,
 } = require("./utils/validators");
-
-let messages = [{ username: "admin", content: "message1" }];
 
 const resolvers = {
   Query: {
@@ -32,8 +35,11 @@ const resolvers = {
       }
     },
     viewer: async (_, __, { user }) => {
+      /*
       const userDb = await User.findOne({ _id: user.sub });
       return userDb;
+      */
+      return user;
     },
     user: async (_, { username }) => {
       const user = await User.findOne({ username });
@@ -42,7 +48,45 @@ const resolvers = {
       }
       return user;
     },
-    messages: () => messages,
+    me: async (_, __, { user, req }) => {
+      /*
+      const authorization = req.headers["authorization"];
+      if (!authorization) {
+        return null;
+      }
+
+      try {
+        const token = authorization.split(" ")[1];
+        const payload = verify(token, prozess.env.SECRET_KEY_ACCESS_TOKEN);
+        context.payload = payload;
+        return User.findOne(payload.username);
+      } catch (err) {
+        console.log(err);
+        return null;
+      }
+      */
+      if (user) {
+        try {
+          return User.findOne({ username: user.username });
+        } catch (err) {
+          console.log(err);
+          return null;
+        }
+      }
+      return null;
+    },
+    getMessages: async (_, __, { user }) => {
+      if (user) {
+        try {
+          const messages = await Message.find();
+
+          return messages;
+        } catch (err) {
+          console.log(err);
+          return null;
+        }
+      }
+    },
   },
   Mutation: {
     // login user and validate login credentials
@@ -67,11 +111,14 @@ const resolvers = {
       const accessToken = generateAccessToken(user);
       const refreshToken = generateRefreshToken(user);
 
-      res.cookie(process.env.SECRET_KEY_COOKIE, refreshToken, {
-        httpOnly: true,
-      });
+      sendRefreshToken(res, refreshToken);
 
-      return accessToken;
+      return { accessToken, user };
+    },
+    logout: async (_, __, { res }) => {
+      sendRefreshToken(res, "");
+
+      return true;
     },
     // multi-step validation for registering new users
     registerValidateKey: async (_, { registerKey }) => {
@@ -142,8 +189,7 @@ const resolvers = {
           password,
           confirmPassword,
         },
-      },
-      { pubsub }
+      }
     ) => {
       // Validate user data
 
@@ -200,15 +246,14 @@ const resolvers = {
         email,
         username,
         password,
-        roles: ["USER"],
-        permissions: ["useChat", "read_own_user"],
         createdAt: new Date().toISOString(),
+        lastSeen: "",
       });
 
       const res = await newUser.save();
 
-      pubsub.publish("NEW_USER", newUser);
-      console.log("mut pubsub", typeof pubsub.asyncIterator === "function");
+      pubsub.publish("NEW_USER", { userCreated: res });
+      //console.log("mut pubsub", typeof pubsub.asyncIterator === "function");
 
       //decrement Register-Key remaining Uses
       const updatedKey = await RegisterKey.updateOne(
@@ -221,29 +266,77 @@ const resolvers = {
 
       return {
         ...res._doc,
-        id: res._id,
+        _id: res._id,
         remainingUses: updatedKey.remainingUses,
         token,
       };
     },
     //createMessage: async (_, { username, content }, { pubsub }) => {
-    createMessage: async (_, { username, content }, { pubsub }) => {
-      const id = messages.length;
+    createMessage: async (_, { username, content }) => {
+      const id = guid();
       const user = await User.findOne({ username });
       if (!user) {
         throw new Error("User not found.");
       }
 
-      const message = {
-        id,
-        user: user.username,
+      const newMessage = new Message({
+        username: user.username,
         content,
-        createdAt: new Date().toISOString(),
-      };
+      });
 
-      messages.push(message);
+      const res = await newMessage.save();
 
-      return { id, content };
+      // const message = {
+      //   id,
+      //   username: user.username,
+      //   content,
+      //   createdAt: new Date().toString(),
+      // };
+
+      pubsub.publish("NEW_MESSAGE", { messageCreated: res });
+
+      return res;
+    },
+    updateUserSettingsNameColor: async (_, { color }, { user }) => {
+      const username = user.username;
+      const updatedUser = await User.findOneAndUpdate(
+        { username },
+        {
+          $set: {
+            settings: {
+              usernameColor: color,
+            },
+          },
+        },
+        {
+          new: true,
+        }
+      );
+
+      const usersArray = await UsersOnline.findOneAndUpdate(
+        { "users.username": username },
+        {
+          $set: {
+            "users.$.settings": {
+              usernameColor: color,
+            },
+          },
+        },
+        {
+          new: true,
+        }
+      );
+      //console.log("color", color);
+      pubsub.publish("USERNAME_COLOR_CHANGED", {
+        usernameColorChanged: updatedUser,
+      });
+
+      if (usersArray.users) {
+        //console.log("users", usersArray.users);
+        pubsub.publish("USERS_ONLINE", { usersOnline: usersArray.users });
+      }
+
+      return updatedUser;
     },
     createRegisterKey: async (_, { registerKey, remainingUses }) => {
       const newRegisterKey = new RegisterKey({
@@ -257,18 +350,86 @@ const resolvers = {
         id: res._id,
       };
     },
+    revokeRefreshTokensForUser: async (_, { username }) => {
+      const user = await User.findOne({ username });
+      await User.updateOne(
+        { username },
+        { $set: { tokenVersion: user.tokenVersion + 1 } }
+      );
+      return true;
+    },
+    addToUsersInChat: async (_, __, { user }) => {
+      //console.log("user", user);
+      const userDb = await User.findOne({ username: user.username });
+      const userIsAlreadyOnline = await UsersOnline.findOne({
+        "users.username": userDb.username,
+      });
+      //console.log("userisAlreadyOnline", userIsAlreadyOnline);
+      if (!userIsAlreadyOnline) {
+        const usersArray = await UsersOnline.findOneAndUpdate(
+          { __id: "61eefd61093c73157c32b0bd" },
+          {
+            $addToSet: {
+              users: {
+                username: userDb.username,
+                settings: {
+                  usernameColor: userDb.settings.usernameColor,
+                },
+              },
+            },
+          },
+          {
+            new: true,
+          }
+        );
+
+        pubsub.publish("USERS_ONLINE", { usersOnline: usersArray.users });
+        return usersArray.users;
+      } else {
+        pubsub.publish("USERS_ONLINE", {
+          usersOnline: userIsAlreadyOnline.users,
+        });
+        return userIsAlreadyOnline.users;
+      }
+    },
+    removeFromUsersInChat: async (_, __, { user }) => {
+      const userDb = await User.findOne({ username: user.username });
+      const usersArray = await UsersOnline.findOneAndUpdate(
+        { "users.username": userDb.username },
+        { $pull: { users: { username: userDb.username } } },
+        { safe: true, multi: true, new: true }
+      );
+      if (usersArray) {
+        pubsub.publish("USERS_ONLINE", { usersOnline: usersArray.users });
+        return usersArray.users;
+      }
+    },
+    updateLastSeen: async (_, { timestamp }, { user }) => {
+      const username = user.username;
+      const userDb = await User.updateOne(
+        { username },
+        { $set: { lastSeen: timestamp } }
+      );
+      return timestamp;
+    },
   },
   Subscription: {
     messageCreated: {
       //subscribe: (_, __, { pubsub }) =>
-      /*
-      subscribe: (_, __, { pubsub }) => {
-        return pubsub.asyncIterator("MESSAGES");
+
+      subscribe: (_, __, ___) => {
+        return pubsub.asyncIterator("NEW_MESSAGE");
       },
-      */
     },
-    newUser: {
-      subscribe: (_, __, { pubsub }) => pubsub.asyncIterator(["NEW_USER"]),
+    userCreated: {
+      subscribe: (_, __, ___) => pubsub.asyncIterator(["NEW_USER"]),
+    },
+    usersOnline: {
+      subscribe: (_, __, ___) => pubsub.asyncIterator(["USERS_ONLINE"]),
+    },
+    usernameColorChanged: {
+      subscribe: (_, __, ___) =>
+        pubsub.asyncIterator(["USERNAME_COLOR_CHANGED"]),
     },
   },
 };

@@ -4,14 +4,16 @@ const typeDefs = gql`
   type Query {
     sayHi: String!
     getUsers: [User]
-    messages: [Message]
+    getMessages: [Message]
     viewer: User!
     user(username: String!): User
+    me: User
+    getUsernameColor(username: String!): String!
   }
 
   type Message {
-    id: ID!
-    user: String!
+    _id: ID!
+    username: String!
     content: String!
     createdAt: String!
   }
@@ -22,13 +24,24 @@ const typeDefs = gql`
   }
 
   type User {
-    id: ID!
-    email: String!
-    password: String!
-    username: String!
-    createdAt: String!
+    _id: ID
+    email: String
+    password: String
+    username: String
+    createdAt: String
     roles: [Role]
     permissions: [Permission]
+    lastSeen: String
+    settings: UserSettings
+  }
+
+  type LoginResponse {
+    accessToken: String!
+    user: User!
+  }
+
+  type UserSettings {
+    usernameColor: String!
   }
 
   enum Role {
@@ -51,8 +64,13 @@ const typeDefs = gql`
 
   type Mutation {
     register(registerInput: RegisterInput): User!
-    login(username: String!, password: String!): String
+    login(username: String!, password: String!): LoginResponse!
+    logout: Boolean!
+    updateLastSeen(timestamp: String!): String!
+    addToUsersInChat: [User]
+    removeFromUsersInChat: [User]
     createMessage(username: String!, content: String!): Message!
+    updateUserSettingsNameColor(color: String!): User!
     createRegisterKey(registerKey: String!, remainingUses: Int!): RegisterKey!
     registerValidateKey(registerKey: String!): Boolean!
     registerValidateEmail(email: String!): Boolean!
@@ -61,11 +79,14 @@ const typeDefs = gql`
       password: String!
       confirmPassword: String!
     ): Boolean!
+    revokeRefreshTokensForUser(username: String!): Boolean!
   }
 
   type Subscription {
-    newUser: User!
-    messageCreated: [Message!]
+    userCreated: User
+    messageCreated: Message
+    usersOnline: [User]
+    usernameColorChanged: User
   }
 `;
 

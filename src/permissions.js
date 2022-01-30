@@ -9,6 +9,14 @@ const checkPermission = (user, permission) => {
   return false;
 };
 
+const checkRole = (user, role) => {
+  if (user) {
+    return user.roles.includes(role);
+  }
+
+  return false;
+};
+
 /*
 const isAuthenticated = rule({ cache: "contextual" })(
   async (parent, args, context, info) => {
@@ -39,9 +47,11 @@ const isAuthenticated = rule({ cache: "contextual" })(
 );
 */
 
-const isAuthenticated = rule()(async (_, __, { user }) => {
-  return user !== null;
-});
+const isAuthenticated = rule({ cache: "contextual" })(
+  async (_, __, { user }) => {
+    return user !== null;
+  }
+);
 const canReadAnyUser = rule()(async (_, __, { user }) => {
   return checkPermission(user, "read_any_user");
 });
@@ -49,9 +59,11 @@ const canReadOwnUser = rule()(async (_, __, { user }) => {
   return checkPermission(user, "read_own_user");
 });
 
-const isAdmin = rule()(async (parent, args, ctx, info) => {
-  return ctx.user.role === "admin";
-});
+const isAdmin = rule({ cache: "contextual" })(
+  async (parent, args, { user }, info) => {
+    return checkRole(user, "ADMIN");
+  }
+);
 
 const isNotAlreadyRegistered = inputRule();
 
@@ -66,17 +78,37 @@ const isOwner = rule()(async (parent, args, ctx, info) => {
 const permissions = shield(
   {
     Query: {
-      //getUsers: isAuthenticated,
+      sayHi: isAuthenticated,
+      getUsers: and(isAuthenticated, isAdmin),
+      getMessages: isAuthenticated,
+      viewer: isAuthenticated,
+      user: isAdmin,
+      me: isAuthenticated,
     },
     Mutation: {
-      //register: isNotAlreadyRegistered,
-      //createBlogPost: or(isAdmin, and(isOwner, isEditor)),
+      updateUserInChat: isAuthenticated,
+      register: !isAuthenticated,
+      registerValidateKey: !isAuthenticated,
+      registerValidateEmail: !isAuthenticated,
+      registerValidateUsername: !isAuthenticated,
+      registerValidatePassword: !isAuthenticated,
+      createMessage: isAuthenticated,
+      updateUserSettingsNameColor: isAuthenticated,
+      createRegisterKey: isAdmin,
+      revokeRefreshTokensForUser: isAdmin,
+      login: !isAuthenticated,
+      logout: isAuthenticated,
+      updateLastSeen: isAuthenticated,
+      removeFromUsersInChat: isAuthenticated,
+      addToUsersInChat: isAuthenticated,
+      updateUserSettingsNameColor: isAuthenticated,
     },
-    /*
-  User: {
-    //secret: isOwner,
-  },
-  */
+    Subscription: {
+      messageCreated: isAuthenticated,
+      userCreated: isAuthenticated,
+      usersOnline: isAuthenticated,
+      usernameColorChanged: isAuthenticated,
+    },
   },
   {
     /*

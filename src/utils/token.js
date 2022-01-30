@@ -10,7 +10,7 @@ const generateAccessToken = (user) => {
       permissions: user.permissions,
     },
     process.env.SECRET_KEY_ACCESS_TOKEN,
-    { algorithm: "HS256", subject: user._id.toString(), expiresIn: "7d" }
+    { algorithm: "HS256", subject: user._id.toString(), expiresIn: "15min" }
   );
 };
 
@@ -20,11 +20,12 @@ const generateRefreshToken = (user) => {
       id: user._id,
       email: user.email,
       username: user.username,
+      tokenVersion: user.tokenVersion,
       roles: user.roles,
       permissions: user.permissions,
     },
     process.env.SECRET_KEY_REFRESH_TOKEN,
-    { algorithm: "HS256", subject: user._id.toString(), expiresIn: "60m" }
+    { algorithm: "HS256", subject: user._id.toString(), expiresIn: "7d" }
   );
 };
 

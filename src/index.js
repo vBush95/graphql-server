@@ -9,50 +9,59 @@ const { createServer } = require("http");
 const { execute, subscribe } = require("graphql");
 const { SubscriptionServer } = require("subscriptions-transport-ws");
 const { makeExecutableSchema } = require("@graphql-tools/schema");
-const { pubsub } = require("./utils/pubsub");
+const pubsub = require("./utils/pubsub");
 const { applyMiddleware } = require("graphql-middleware");
 const permissions = require("./permissions");
 const cors = require("cors");
 const expressJwt = require("express-jwt");
-const readJWT = require("./utils/readJWT");
 
-const { ApolloServerPluginDrainHttpServer } = require("apollo-server-core");
+const jwtMiddleware = require("./utils/jwtMiddleware");
+const corsOptions = require("./utils/cors");
+const readJWT = require("./utils/readJWT");
+const cookieParser = require("cookie-parser");
+const { RedisPubSub } = require("graphql-redis-subscriptions");
+const { generateAccessToken, generateRefreshToken } = require("./utils/token");
+const jwt = require("jsonwebtoken");
+const User = require("./models/User");
+const sendRefreshToken = require("./utils/sendRefreshToken");
 
 async function startApolloServer(typeDefs, resolvers) {
   const app = express();
 
-  //Cors
-  const allowedDomains = [
-    "http://localhost:3000",
-    "ws://localhost:4000",
-    "https://studio.apollographql.com",
-  ];
-  const verifyOrigin = (origin, callback) => {
-    if (!origin) return callback(null, true);
-
-    if (allowedDomains.indexOf(origin) === -1) {
-      var msg = `This site ${origin} does not have an access. Only specific domains are allowed to access it.`;
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
-  };
-
-  const corsOptions = {
-    origin: verifyOrigin,
-    //origin: "http://localhost:3000",
-    //origin: "https://studio.apollographql.com",
-    credentials: true,
-  };
-
   //Middleware exporess JWT and cors
-  app.use(
-    expressJwt({
-      secret: process.env.SECRET_KEY_ACCESS_TOKEN,
-      algorithms: ["HS256"],
-      credentialsRequired: false,
-    }),
-    cors(corsOptions)
-  );
+  //app.use(jwtMiddleware, cors(corsOptions));
+  app.use(cors(corsOptions));
+  app.use(cookieParser());
+
+  app.post("/refresh_token", async (req, res) => {
+    const token = req.cookies[process.env.SECRET_KEY_COOKIE];
+    if (!token) {
+      return res.send({ ok: false, accessToken: "" });
+    }
+    let payload = null;
+    try {
+      payload = jwt.verify(token, process.env.SECRET_KEY_REFRESH_TOKEN);
+    } catch (err) {
+      console.log(err);
+      return res.send({ ok: false, accessToken: "" });
+    }
+
+    //if we get here token is valid and we can send back an access token
+    const user = await User.findOne({ username: payload.username });
+
+    if (!user) {
+      return res.send({ ok: false, accessToken: "" });
+    }
+
+    if (user.tokenVersion !== payload.tokenVersion) {
+      return res.send({ ok: false, accessToken: "" });
+    }
+
+    const refreshToken = generateRefreshToken(user);
+    sendRefreshToken(res, refreshToken);
+
+    return res.send({ ok: true, accessToken: generateAccessToken(user) });
+  });
 
   const httpServer = createServer(app);
 
@@ -67,10 +76,11 @@ async function startApolloServer(typeDefs, resolvers) {
       execute,
       subscribe,
       onConnect(connectionParams, webSocket, context) {
-        console.log("Connected!");
+        console.log(`${connectionParams.decodedToken.username} - connected`);
       },
       onDisconnect(webSocket, context) {
-        console.log("Disconnected!");
+        //console.log(context);
+        console.log(`disconnected`);
       },
     },
     {
@@ -86,12 +96,13 @@ async function startApolloServer(typeDefs, resolvers) {
     schema,
     context: ({ req, res }) => {
       const user = readJWT(req);
-      //console.log("pubsub1", pubsub);
+      //console.log("pubsub", pubsub);
       //console.log("pubsub", typeof pubsub.asyncIterator === "function");
+      //console.log("user", user);
       return {
         req,
         res,
-        pubsub,
+        //pubsub,
         user: user || null,
       };
     },
@@ -115,6 +126,7 @@ async function startApolloServer(typeDefs, resolvers) {
     // server root. However, *other* Apollo Server packages host it at
     // /graphql. Optionally provide this to match apollo-server.
     path: "/",
+    cors: false,
   });
 
   try {
