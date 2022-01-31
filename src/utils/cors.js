@@ -6,7 +6,10 @@
 //   "https://client-meine-tolle-seite-1.herokuapp.com",
 // ];
 
-const allowedDomains = ["https://client-meine-tolle-seite-1.herokuapp.com"];
+const allowedDomains = [
+  "https://client-meine-tolle-seite-1.herokuapp.com",
+  "https://studio.apollographql.com",
+];
 const verifyOrigin = (origin, callback) => {
   if (!origin) return callback(null, true);
 
