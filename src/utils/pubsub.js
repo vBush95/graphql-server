@@ -18,8 +18,10 @@ const REDIS_PORT = 16638;
 //removed port
 const options = {
   host: process.env.REDIS_HOST,
+  port: 16638,
   password: process.env.REDIS_PW,
   username: "default",
+  tls: {},
 };
 
 const pubsub = new RedisPubSub({
