@@ -138,7 +138,7 @@ async function startApolloServer(typeDefs, resolvers) {
     await new Promise((resolve) => {
       httpServer.listen({
         //port: process.env.PORT || 4000,
-        port: process.env.PORT || 80,
+        port: process.env.PORT || 4000,
         resolve,
       }),
         console.log(

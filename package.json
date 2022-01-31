@@ -26,10 +26,10 @@
     "ioredis": "^4.28.2",
     "jsonwebtoken": "^8.5.1",
     "mongoose": "^6.1.4",
-    "subscriptions-transport-ws": "^0.11.0"
+    "subscriptions-transport-ws": "^0.11.0",
+    "dotenv": "^8.6.0"
   },
   "devDependencies": {
-    "dotenv": "^8.6.0",
     "nodemon": "^2.0.4"
   }
 }
