@@ -15,16 +15,21 @@ const REDIS_PORT = 16638;
 //   },
 // };
 
-const options = {
-  host: process.env.REDIS_HOST,
-  port: 16638,
-  password: process.env.REDIS_PW,
-  username: "default",
-};
+// const options = {
+//   host: process.env.REDIS_HOST,
+//   port: 16638,
+//   password: process.env.REDIS_PW,
+//   username: "default",
+// };
+
+// const pubsub = new RedisPubSub({
+//   publisher: new Redis(options),
+//   subscriber: new Redis(options),
+// });
 
 const pubsub = new RedisPubSub({
-  publisher: new Redis(options),
-  subscriber: new Redis(options),
+  publisher: new Redis(process.env.REDIS_URL),
+  subscriber: new Redis(process.env.REDIS_URL),
 });
 
 module.exports = pubsub;
